@@ -1,0 +1,9 @@
+.vs/
+bin/
+obj/
+*.user
+*.suo
+*.sdf
+*.opensdf
+Debug/
+Release/
