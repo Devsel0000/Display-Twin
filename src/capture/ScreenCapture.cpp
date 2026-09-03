@@ -4,6 +4,11 @@
 #include <iomanip>
 
 namespace {
+// How often to retry recreating duplication while it is unavailable. Short
+// enough to resume within a blink after a UAC prompt closes, long enough to
+// keep the retry loop off the CPU.
+constexpr ULONGLONG kRecoveryPollMs = 200;
+
 void PrintCaptureEnvironment(IDXGIAdapter* adapter, IDXGIOutput* output) {
     DXGI_ADAPTER_DESC adapterDesc{};
     DXGI_OUTPUT_DESC outputDesc{};
@@ -100,30 +105,105 @@ bool ScreenCapture::Initialize() {
     return true;
 }
 
+void ScreenCapture::MarkDuplicationLost(const char* reason) {
+    if (frameAcquired_ && duplication_) {
+        duplication_->ReleaseFrame();
+    }
+    frameAcquired_ = false;
+    frameTexture_.Reset();
+    duplication_.Reset();
+    nextRetryTick_ = GetTickCount64() + kRecoveryPollMs;
+    if (!lostLogged_) {
+        lostLogged_ = true;
+        std::cerr << "[ScreenCapture] Desktop duplication lost (" << reason
+            << "). Retrying every " << kRecoveryPollMs << "ms..." << std::endl;
+    }
+}
+
+bool ScreenCapture::TryRecreateDuplication() {
+    if (!output1_ || !d3dDevice_) return false;
+
+    const HRESULT hr = output1_->DuplicateOutput(d3dDevice_.Get(), &duplication_);
+    if (FAILED(hr)) {
+        // Expected while the secure desktop (UAC prompt, Ctrl+Alt+Del, lock
+        // screen) owns the session - E_ACCESSDENIED here just means "not yet".
+        duplication_.Reset();
+        nextRetryTick_ = GetTickCount64() + kRecoveryPollMs;
+        return false;
+    }
+
+    // A mode switch can change the desktop size while duplication was down.
+    // The encoder was created for the old size and CopyResource requires
+    // matching dimensions, so warn loudly rather than streaming nothing.
+    DXGI_OUTPUT_DESC desc{};
+    if (SUCCEEDED(output_->GetDesc(&desc))) {
+        const int newWidth = desc.DesktopCoordinates.right - desc.DesktopCoordinates.left;
+        const int newHeight = desc.DesktopCoordinates.bottom - desc.DesktopCoordinates.top;
+        if (newWidth != width_ || newHeight != height_) {
+            std::cerr << "[ScreenCapture] Desktop resolution changed from " << width_ << "x" << height_
+                << " to " << newWidth << "x" << newHeight
+                << ". The encoder is still set to the old size - restart the host." << std::endl;
+        }
+    }
+
+    lostLogged_ = false;
+    std::cout << "[ScreenCapture] Desktop duplication recovered." << std::endl;
+    return true;
+}
+
 bool ScreenCapture::CaptureFrame() {
-    if (!duplication_) return false;
+    // Recovery path: a UAC prompt / lock screen / Ctrl+Alt+Del switches
+    // Windows to the secure desktop and kills duplication. Recreating it
+    // fails until that desktop goes away, so keep retrying on a timer
+    // instead of giving up permanently. Sleeping here also keeps the host
+    // loop from spinning at 100% CPU while we're in the lost state, since
+    // AcquireNextFrame isn't around to pace it.
+    if (!duplication_) {
+        const ULONGLONG now = GetTickCount64();
+        if (now < nextRetryTick_) {
+            Sleep(static_cast<DWORD>(nextRetryTick_ - now));
+        }
+        if (!TryRecreateDuplication()) {
+            return false;
+        }
+    }
+
     if (frameAcquired_) ReleaseFrame();
     IDXGIResource* resource = nullptr;
     DXGI_OUTDUPL_FRAME_INFO info{};
     HRESULT hr = duplication_->AcquireNextFrame(10, &info, &resource);
     if (hr == DXGI_ERROR_WAIT_TIMEOUT) return false;
     if (hr == DXGI_ERROR_ACCESS_LOST) {
-        std::cerr << "[ScreenCapture] Desktop duplication access lost" << std::endl;
-        duplication_.Reset();
-        frameTexture_.Reset();
-        output1_->DuplicateOutput(d3dDevice_.Get(), &duplication_);
+        MarkDuplicationLost("access lost");
         return false;
     }
-    frameAcquired_ = true;
+    if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
+        // The D3D device itself is gone. NVENC still holds a reference to it,
+        // so a silent partial recovery here would leave the encoder pointing
+        // at a dead device - surface it instead of hiding it.
+        std::cerr << "[ScreenCapture] D3D device removed/reset (0x" << std::hex << hr
+            << std::dec << "). Restart the host to recover." << std::endl;
+        MarkDuplicationLost("device removed");
+        return false;
+    }
+    if (FAILED(hr)) {
+        MarkDuplicationLost("AcquireNextFrame failed");
+        return false;
+    }
     if (!resource) {
-        ReleaseFrame();
+        // Succeeded without a surface: nothing to encode this tick.
+        duplication_->ReleaseFrame();
         return false;
     }
 
+    frameAcquired_ = true;
     hr = resource->QueryInterface(IID_PPV_ARGS(&frameTexture_));
     resource->Release();
-    if (FAILED(hr)) ReleaseFrame();
-    return frameAcquired_;
+    if (FAILED(hr)) {
+        ReleaseFrame();
+        return false;
+    }
+    return true;
 }
 
 ID3D11Texture2D* ScreenCapture::GetFrameTexture() const {

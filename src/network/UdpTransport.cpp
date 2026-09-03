@@ -1,4 +1,4 @@
-﻿// File: PenDisplayPC/src/network/UdpTransport.cpp
+// File: PenDisplayPC/src/network/UdpTransport.cpp
 #include "network/UdpTransport.h"
 #include <iostream>
 #include <cstring>
@@ -8,6 +8,10 @@ namespace {
 bool StartWinsock() {
 	WSADATA data{};
 	return WSAStartup(MAKEWORD(2, 2), &data) == 0;
+}
+
+bool SameEndpoint(const sockaddr_in& a, const sockaddr_in& b) {
+	return a.sin_addr.s_addr == b.sin_addr.s_addr && a.sin_port == b.sin_port;
 }
 }
 
@@ -22,7 +26,13 @@ UdpSender::UdpSender(const std::string& ip, int port) {
 	if (sock_ == INVALID_SOCKET || inet_pton(AF_INET, ip.c_str(), &addr_.sin_addr) != 1) {
 		if (sock_ != INVALID_SOCKET) closesocket(sock_);
 		sock_ = INVALID_SOCKET;
+		return;
 	}
+	// A frame is sent as dozens of back-to-back datagrams. With the default
+	// send buffer that burst can stall inside sendto(), which lands directly
+	// on the end-to-end latency path.
+	int sndbuf = 4 * 1024 * 1024;
+	setsockopt(sock_, SOL_SOCKET, SO_SNDBUF, (char*)&sndbuf, sizeof(sndbuf));
 }
 
 UdpSender::~UdpSender() {
@@ -57,7 +67,7 @@ UdpReceiver::UdpReceiver(int port) {
 		sock_ = INVALID_SOCKET;
 		return;
 	}
-	// ?섏떊 踰꾪띁 ?ш린 利앷? (?⑦궥 ?쒕∼ 諛⑹?)
+	// Enlarge the receive buffer to reduce kernel-level packet drops.
 	int rcvbuf = 2 * 1024 * 1024;
 	setsockopt(sock_, SOL_SOCKET, SO_RCVBUF, (char*)&rcvbuf, sizeof(rcvbuf));
 	DWORD timeoutMs = 100;
@@ -67,6 +77,16 @@ UdpReceiver::UdpReceiver(int port) {
 UdpReceiver::~UdpReceiver() { Stop(); }
 
 void UdpReceiver::SetCallback(std::function<void(const uint8_t*, size_t)> cb) { callback_ = cb; }
+
+void UdpReceiver::EnableSourceLock(bool enable) {
+	sourceLockEnabled_ = enable;
+	if (!enable) ResetSourceLock();
+}
+
+void UdpReceiver::ResetSourceLock() {
+	sourceLocked_ = false;
+	std::memset(&lockedSource_, 0, sizeof(lockedSource_));
+}
 
 bool UdpReceiver::Start() {
 	if (sock_ == INVALID_SOCKET || running_) return false;
@@ -102,8 +122,19 @@ DWORD WINAPI UdpReceiver::ReceiveThread(LPVOID param) {
 void UdpReceiver::RunLoop() {
 	uint8_t buffer[65536];
 	while (running_) {
-		int len = recv(sock_, (char*)buffer, sizeof(buffer), 0);
+		sockaddr_in sender{};
+		int senderLen = sizeof(sender);
+		int len = recvfrom(sock_, (char*)buffer, sizeof(buffer), 0,
+			(sockaddr*)&sender, &senderLen);
 		if (len > 0 && running_ && callback_) {
+			if (sourceLockEnabled_) {
+				if (!sourceLocked_) {
+					lockedSource_ = sender;
+					sourceLocked_ = true;
+				} else if (!SameEndpoint(lockedSource_, sender)) {
+					continue; // Drop packets from an unrecognized source.
+				}
+			}
 			callback_(buffer, len);
 		}
 		else if (len == SOCKET_ERROR) {

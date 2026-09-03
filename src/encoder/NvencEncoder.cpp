@@ -1,7 +1,10 @@
 #include "encoder/NvencEncoder.h"
 
+#include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <iostream>
+#include <string>
 
 using NvEncodeAPICreateInstanceFn = NVENCSTATUS(NVENCAPI*)(NV_ENCODE_API_FUNCTION_LIST*);
 
@@ -83,12 +86,62 @@ bool NvencEncoder::ConfigureEncoder() {
     initParams_.enablePTD = 1;
     initParams_.enableEncodeAsync = 0;
     initParams_.enableOutputInVidmem = 0;
-    initParams_.tuningInfo = NV_ENC_TUNING_INFO_LOW_LATENCY;
+    // ULTRA_LOW_LATENCY trades a little quality for a shorter encode pipeline,
+    // which is the right trade for interactive pen input.
+    initParams_.tuningInfo = NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY;
 
-    // 일부 최신 드라이버에서는 프리셋 조회 API의 구버전 구조체를 거부한다.
-    // 이 경우 프리셋 설정을 직접 전달하지 않고 드라이버가 P1 기본값을 적용하게
-    // 하면 드라이버 버전과 무관하게 세션을 초기화할 수 있다.
-    initParams_.encodeConfig = nullptr;
+    // A hand-built NV_ENC_CONFIG (zero-initialized, version set manually) is
+    // rejected by the driver with NV_ENC_ERR_INVALID_PARAM. Fetching the
+    // preset's own config via nvEncGetEncodePresetConfigEx first and only
+    // overriding the fields we care about keeps every driver-required field
+    // populated, so the modified struct is accepted.
+    NV_ENC_PRESET_CONFIG presetConfig{};
+    presetConfig.version = NV_ENC_PRESET_CONFIG_VER;
+    presetConfig.presetCfg.version = NV_ENC_CONFIG_VER;
+    const NVENCSTATUS presetStatus = api_.nvEncGetEncodePresetConfigEx(
+        session_, initParams_.encodeGUID, initParams_.presetGUID,
+        initParams_.tuningInfo, &presetConfig);
+    if (presetStatus != NV_ENC_SUCCESS) {
+        std::cerr << "[NVENC] nvEncGetEncodePresetConfigEx failed: " << presetStatus
+                   << " - falling back to driver defaults (bitrate/SPS-PPS settings will be ignored)"
+                   << std::endl;
+        initParams_.encodeConfig = nullptr;
+        return true;
+    }
+
+    encodeConfig_ = presetConfig.presetCfg;
+    encodeConfig_.version = NV_ENC_CONFIG_VER;
+    encodeConfig_.gopLength = NVENC_INFINITE_GOPLENGTH;
+    encodeConfig_.frameIntervalP = 1;
+
+    // This SDK header only defines CONSTQP/VBR/CBR (no *_LOWDELAY_HQ variant).
+    // Plain CBR plus NV_ENC_TUNING_INFO_LOW_LATENCY (already set above) gives
+    // the low-latency behavior we want.
+    encodeConfig_.rcParams.rateControlMode = NV_ENC_PARAMS_RC_CBR;
+    const uint32_t bitrateBps = static_cast<uint32_t>(bitrateKbps_) * 1000u;
+    encodeConfig_.rcParams.averageBitRate = bitrateBps;
+    encodeConfig_.rcParams.maxBitRate = bitrateBps;
+    encodeConfig_.rcParams.vbvBufferSize = bitrateBps / static_cast<uint32_t>(std::max(1, framerate_));
+    encodeConfig_.rcParams.vbvInitialDelay = 0;
+
+    // Every one of these costs latency in exchange for quality/efficiency,
+    // so turn them off. zeroReorderDelay tells the encoder to emit each frame
+    // as soon as it is coded (num_reorder_frames = 0), which also means the
+    // Android decoder never has to hold a frame back to fix output order.
+    encodeConfig_.rcParams.zeroReorderDelay = 1;
+    encodeConfig_.rcParams.enableLookahead = 0;
+    encodeConfig_.rcParams.enableAQ = 0;
+    encodeConfig_.rcParams.enableTemporalAQ = 0;
+
+    encodeConfig_.encodeCodecConfig.h264Config.repeatSPSPPS = 1;
+    encodeConfig_.encodeCodecConfig.h264Config.idrPeriod = static_cast<uint32_t>(std::max(1, framerate_));
+    encodeConfig_.encodeCodecConfig.h264Config.sliceMode = 0;
+    encodeConfig_.encodeCodecConfig.h264Config.sliceModeData = 0;
+
+    initParams_.encodeConfig = &encodeConfig_;
+    std::cout << "[NVENC] Applied preset-derived config: bitrate=" << bitrateKbps_
+              << "kbps repeatSPSPPS=1 idrPeriod=" << encodeConfig_.encodeCodecConfig.h264Config.idrPeriod
+              << std::endl;
     return true;
 }
 
@@ -148,13 +201,30 @@ bool NvencEncoder::Initialize(ID3D11Device* d3dDevice) {
     return true;
 }
 
+bool NvencEncoder::CopyInput(ID3D11Texture2D* texture) {
+    if (!d3dContext_ || !inputTexture_ || !texture) return false;
+    // Queues a GPU-side copy. D3D keeps the source alive for the queued
+    // command, so the caller may release the DXGI duplication frame as soon
+    // as this returns instead of holding it across the whole encode.
+    d3dContext_->CopyResource(inputTexture_.Get(), texture);
+    // We never Present, so nothing else would push this command buffer to the
+    // GPU promptly - it would sit batched until NVENC's own submission forced
+    // it out, and that wait shows up inside nvEncLockBitstream. Submitting now
+    // lets the copy start while we set up the encode call.
+    d3dContext_->Flush();
+    return true;
+}
+
 std::vector<uint8_t> NvencEncoder::EncodeFrame(ID3D11Texture2D* texture) {
+    if (!CopyInput(texture)) return std::vector<uint8_t>();
+    return Encode();
+}
+
+std::vector<uint8_t> NvencEncoder::Encode() {
     std::vector<uint8_t> output;
-    if (!session_ || !registeredInput_ || !bitstreamBuffer_ || !texture) {
+    if (!session_ || !registeredInput_ || !bitstreamBuffer_) {
         return output;
     }
-
-    d3dContext_->CopyResource(inputTexture_.Get(), texture);
 
     NV_ENC_MAP_INPUT_RESOURCE map{};
     map.version = NV_ENC_MAP_INPUT_RESOURCE_VER;
@@ -174,10 +244,22 @@ std::vector<uint8_t> NvencEncoder::EncodeFrame(ID3D11Texture2D* texture) {
     picture.pictureStruct = NV_ENC_PIC_STRUCT_FRAME;
     picture.inputTimeStamp = frameIndex_;
     picture.frameIdx = frameIndex_++;
+    // Only force the opening keyframes so a client that attaches immediately
+    // has something decodable. The periodic refresh is left to NVENC's own
+    // idrPeriod - forcing it again here just doubled up on expensive IDRs.
+    // (The old OutputDebugStringA log lived on this path too; it blocks on the
+    // attached debugger for milliseconds, so it has no business in the hot loop.)
+    if (picture.frameIdx < 5) {
+        picture.encodePicFlags = NV_ENC_PIC_FLAG_FORCEIDR | NV_ENC_PIC_FLAG_OUTPUT_SPSPPS;
+    }
 
+    const auto submitStart = std::chrono::steady_clock::now();
     const NVENCSTATUS encodeStatus = api_.nvEncEncodePicture(session_, &picture);
     api_.nvEncUnmapInputResource(session_, map.mappedResource);
+    const auto submitEnd = std::chrono::steady_clock::now();
+    lastSubmitMs_ = std::chrono::duration<double, std::milli>(submitEnd - submitStart).count();
     if (encodeStatus != NV_ENC_SUCCESS) {
+        lastReadbackMs_ = 0.0;
         return output;
     }
 
@@ -189,6 +271,9 @@ std::vector<uint8_t> NvencEncoder::EncodeFrame(ID3D11Texture2D* texture) {
         output.assign(begin, begin + lock.bitstreamSizeInBytes);
         api_.nvEncUnlockBitstream(session_, bitstreamBuffer_);
     }
+    lastReadbackMs_ = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - submitEnd).count();
+    lastBitstreamBytes_ = output.size();
     return output;
 }
 

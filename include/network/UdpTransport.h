@@ -1,16 +1,15 @@
-﻿// File: PenDisplayPC/include/network/UdpTransport.h
+// File: PenDisplayPC/include/network/UdpTransport.h
 #pragma once
 
-// ????留ㅽ겕濡쒕뱾? 諛섎뱶??winsock2.h ?꾩뿉 ?????
+// Winsock macros must be defined before windows.h/winsock2.h are included.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 
 #ifndef _WINSOCKAPI_
-#define _WINSOCKAPI_   // windows.h媛 winsock.h瑜??ы븿?섏? ?딅룄濡?李⑤떒
+#define _WINSOCKAPI_   // Prevent windows.h from pulling in the legacy winsock.h
 #endif
 
-// ?댁젣 ?덉쟾?섍쾶 winsock2.h ?ы븿
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <string>
@@ -41,6 +40,17 @@ public:
     bool Start();
     void Stop();
     void SetCallback(std::function<void(const uint8_t*, size_t)> callback);
+
+    // When enabled, the receiver remembers the source IP:port of the first
+    // datagram it accepts and silently drops any later datagram that comes
+    // from a different source. This is a lightweight mitigation against
+    // other devices on the same network injecting packets on this port
+    // while the protocol still has no session handshake/authentication.
+    // Call ResetSourceLock() to allow a new source to bind (e.g. after a
+    // client reconnects from a different address).
+    void EnableSourceLock(bool enable);
+    void ResetSourceLock();
+
 private:
     static DWORD WINAPI ReceiveThread(LPVOID param);
     void RunLoop();
@@ -49,4 +59,8 @@ private:
     std::atomic_bool running_{ false };
     std::function<void(const uint8_t*, size_t)> callback_;
     bool winsockStarted_ = false;
+
+    bool sourceLockEnabled_ = false;
+    std::atomic_bool sourceLocked_{ false };
+    sockaddr_in lockedSource_{};
 };

@@ -44,6 +44,7 @@
     <TargetName>PenDisplayPC</TargetName>
     <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
     <ApplicationManifest>PenDisplayPC.manifest</ApplicationManifest>
+    <SubSystem>Windows</SubSystem>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -54,10 +55,16 @@
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>dxgi.lib;d3d11.lib;mf.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;ws2_32.lib;setupapi.lib;propsys.lib;evr.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dxgi.lib;d3d11.lib;mf.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;ws2_32.lib;iphlpapi.lib;setupapi.lib;propsys.lib;evr.lib;comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <UACExecutionLevel>requireAdministrator</UACExecutionLevel>
       <UACUIAccess>false</UACUIAccess>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <!-- UACExecutionLevel makes the linker generate its own manifest,
+           which silently drops PenDisplayPC.manifest's <dependency> block.
+           This property injects the comctl32 v6 SxS dependency directly
+           into that linker-generated manifest so InitCommonControlsEx()
+           doesn't fail at runtime. -->
+      <AdditionalManifestDependencies>type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'</AdditionalManifestDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -69,9 +76,10 @@
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>dxgi.lib;d3d11.lib;mf.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;ws2_32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dxgi.lib;d3d11.lib;mf.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;ws2_32.lib;iphlpapi.lib;setupapi.lib;comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <UACExecutionLevel>requireAdministrator</UACExecutionLevel>
       <UACUIAccess>false</UACUIAccess>
+      <AdditionalManifestDependencies>type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'</AdditionalManifestDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -79,16 +87,20 @@
     <ClInclude Include="include\capture\ScreenCapture.h" />
     <ClInclude Include="include\encoder\NvencEncoder.h" />
     <ClInclude Include="include\network\UdpTransport.h" />
+    <ClInclude Include="include\network\NetworkInfo.h" />
     <ClInclude Include="include\hid\VirtualPen.h" />
     <ClInclude Include="include\app\HostConfig.h" />
     <ClInclude Include="include\protocol\Packets.h" />
+    <ClInclude Include="include\app\HostController.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\capture\ScreenCapture.cpp" />
     <ClCompile Include="src\encoder\NvencEncoder.cpp" />
     <ClCompile Include="src\network\UdpTransport.cpp" />
+    <ClCompile Include="src\network\NetworkInfo.cpp" />
     <ClCompile Include="src\hid\VirtualPen.cpp" />
+    <ClCompile Include="src\app\HostController.cpp" />
+    <ClCompile Include="src\gui\GuiMain.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

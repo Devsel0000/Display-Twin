@@ -8,4 +8,18 @@
       </requestedPrivileges>
     </security>
   </trustInfo>
+  <!-- Without this, comctl32 v6 side-by-side activation isn't set up and
+       InitCommonControlsEx() fails at runtime ("failed to initialize
+       common controls"). -->
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity
+        type="win32"
+        name="Microsoft.Windows.Common-Controls"
+        version="6.0.0.0"
+        processorArchitecture="*"
+        publicKeyToken="6595b64144ccf1df"
+        language="*" />
+    </dependentAssembly>
+  </dependency>
 </assembly>
