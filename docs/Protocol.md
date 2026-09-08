@@ -86,8 +86,15 @@ Flags bit 0은 eraser, bit 1은 palm rejection, bit 2는 stylus, bit 3은 UP 패
 - PC v2 영상 packetizer: 적용
 - PC NVENC 비트레이트/CBR/SPS-PPS 반복 설정: preset config 기반으로 적용 (`NvencEncoder::ConfigureEncoder`)
 - PC 펜 입력 채널 source-address lock: 적용 (`UdpReceiver::EnableSourceLock`) — 세션 핸드셰이크가
-  없는 상태에서 최소한의 스푸핑 방지. 첫 발신자 IP:port에 고정되며, 재연결 시나리오는
-  아직 별도 해제 로직이 없어 후속 Phase(핸드셰이크/Teardown)에서 함께 정리 필요.
+  없는 상태에서 최소한의 스푸핑 방지. 첫 발신자 IP:port에 고정된다.
+- PC 펜 세션 자동 리셋: 적용 (`HostController::resetPenSession`) — 고정된 발신자로부터
+  3초 이상 무응답이면 자동으로 source lock 해제 + `VirtualPen::ReleaseIfDown()`으로 눌려있던
+  펜 tip 해제 + sequence 추적 초기화. USB 테더링이 끊겼다 새 IP로 재연결되는 상황을
+  사용자 개입 없이 스스로 복구한다 (원래 명세의 3초 Teardown을 펜 채널에 한해 구현).
+- PC 영상 목적지 실시간 재지정: 적용 (`UdpSender::SetDestination`, `HostController::UpdateTabletIp`) —
+  스트리밍 중에 GUI의 "Detect tethering"이 새 태블릿 주소를 찾으면 Stop/Start 없이
+  바로 그 주소로 영상 전송을 이어간다. 같은 호출이 펜 세션도 즉시 리셋시켜, 수동으로
+  Detect를 누르면 두 채널 다 곧바로 복구된다.
 - PC v2 펜 parser: 적용
 - Android v2 parser/reassembler/PLI 로깅: 적용. 단, PLI 패킷을 실제로 PC에 전송하는 제어
   채널(5002)은 아직 미구현 — 프레임 폐기 시 로그만 남기고 재전송 요청은 나가지 않음.

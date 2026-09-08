@@ -17,6 +17,7 @@
 #include <functional>
 #include <cstdint>
 #include <atomic>
+#include <mutex>
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -27,9 +28,19 @@ public:
     bool Send(const std::vector<uint8_t>& data);
     bool Send(const uint8_t* data, size_t len);
     bool IsValid() const;
+
+    // Re-points future sends at a new destination IP (same port), without
+    // tearing down the socket. Thread-safe with Send(). Lets a live stream
+    // follow the tablet to a new address - e.g. after USB tethering drops
+    // and reconnects with a different DHCP-assigned IP - without a full
+    // Stop/Start.
+    bool SetDestination(const std::string& ip);
+
 private:
     SOCKET sock_ = INVALID_SOCKET;
+    mutable std::mutex addrMutex_;
     sockaddr_in addr_;
+    int port_ = 0;
     bool winsockStarted_ = false;
 };
 
@@ -50,6 +61,14 @@ public:
     // client reconnects from a different address).
     void EnableSourceLock(bool enable);
     void ResetSourceLock();
+    bool IsSourceLocked() const { return sourceLocked_.load(); }
+
+    // Milliseconds since the last datagram this receiver accepted (i.e. that
+    // passed the source lock and reached the callback), or MAXDWORD if none
+    // has ever arrived. Backed by GetTickCount64(), safe to poll from
+    // another thread - used to detect "the locked source went silent",
+    // which is what a mid-session reconnect from a new address looks like.
+    DWORD MillisecondsSinceLastPacket() const;
 
 private:
     static DWORD WINAPI ReceiveThread(LPVOID param);
@@ -63,4 +82,5 @@ private:
     bool sourceLockEnabled_ = false;
     std::atomic_bool sourceLocked_{ false };
     sockaddr_in lockedSource_{};
+    std::atomic<ULONGLONG> lastPacketTick_{ 0 };
 };

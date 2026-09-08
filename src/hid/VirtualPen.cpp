@@ -36,6 +36,22 @@ bool VirtualPen::ConsumePressureStats(uint32_t& count, uint32_t& minOut,
     return true;
 }
 
+void VirtualPen::ReleaseIfDown() {
+    if (!hDevice || !tipDown_) return;
+
+    POINTER_PEN_INFO penInfo = {};
+    penInfo.pointerInfo.pointerType = PT_PEN;
+    penInfo.pointerInfo.pointerFlags = POINTER_FLAG_UP;
+    penInfo.pointerInfo.ptPixelLocation.x = lastPixelX_;
+    penInfo.pointerInfo.ptPixelLocation.y = lastPixelY_;
+    tipDown_ = false;
+
+    POINTER_TYPE_INFO pointerInfo{};
+    pointerInfo.type = PT_PEN;
+    pointerInfo.penInfo = penInfo;
+    InjectSyntheticPointerInput(hDevice, &pointerInfo, 1);
+}
+
 void VirtualPen::InjectInput(const PenInputPacket& packet) {
     if (!hDevice) return;
 
@@ -53,6 +69,8 @@ void VirtualPen::InjectInput(const PenInputPacket& packet) {
     penInfo.pointerInfo.pointerType = PT_PEN;
     penInfo.pointerInfo.ptPixelLocation.x = static_cast<long>(clamp01(packet.x) * (screenWidth_ - 1));
     penInfo.pointerInfo.ptPixelLocation.y = static_cast<long>(clamp01(packet.y) * (screenHeight_ - 1));
+    lastPixelX_ = penInfo.pointerInfo.ptPixelLocation.x;
+    lastPixelY_ = penInfo.pointerInfo.ptPixelLocation.y;
 
     // 3. Set flags (InRange, InContact, Down/Move-Update/Up). A held-down
     // move MUST carry POINTER_FLAG_UPDATE (not just INRANGE|INCONTACT) or

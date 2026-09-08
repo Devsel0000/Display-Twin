@@ -7,10 +7,12 @@
 #include "network/UdpTransport.h"
 #include "protocol/Packets.h"
 
+#include <atomic>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <mutex>
 #include <sstream>
 #include <thread>
 #include <utility>
@@ -32,6 +34,14 @@ bool HostController::Start(const HostSettings& settings, LogCallback log) {
 void HostController::Stop() {
     running_ = false;
     if (worker_.joinable()) worker_.join();
+}
+
+void HostController::UpdateTabletIp(const std::string& ip) {
+    if (!running_.load()) return;
+    std::lock_guard<std::mutex> lock(pendingMutex_);
+    pendingTabletIp_ = ip;
+    hasPendingTabletIp_ = true;
+    pendingPenReset_ = true;
 }
 
 void HostController::Run(HostSettings settings, LogCallback log) {
@@ -79,8 +89,10 @@ void HostController::Run(HostSettings settings, LogCallback log) {
     // a burst. Applying a stale MOVE after a newer one (or after UP) makes
     // the injected pointer visibly jitter/snap backward, so drop anything
     // that isn't newer than the last accepted Sequence.
-    bool havePenSequence = false;
-    uint16_t lastPenSequence = 0;
+    // Touched from both the UDP receive thread (in the callback below) and
+    // the main loop thread (on a pen-session reset), hence atomic.
+    std::atomic_bool havePenSequence{false};
+    std::atomic<uint16_t> lastPenSequence{0};
     inputReceiver.SetCallback([&virtualPen, &havePenSequence, &lastPenSequence](const uint8_t* data, size_t len) {
         PenInputPacket packet;
         if (!ParsePenPacket(data, len, packet) ||
@@ -101,6 +113,19 @@ void HostController::Run(HostSettings settings, LogCallback log) {
     std::ostringstream ready;
     ready << "[PC] Streaming to " << settings.tabletIp << ":" << settings.videoPort;
     Log(log, ready.str());
+
+    // Ends the current pen session: unlocks the input source (so a packet
+    // from a new address is accepted instead of dropped forever), lifts a
+    // tip that was mid-drag when the link died, and clears sequence
+    // tracking (so the next session's numbering, which may restart from 0
+    // if the Android app itself relaunched, isn't rejected as "stale").
+    constexpr DWORD kPenSilenceTimeoutMs = 3000;
+    auto resetPenSession = [&](const char* reason) {
+        inputReceiver.ResetSourceLock();
+        virtualPen.ReleaseIfDown();
+        havePenSequence = false;
+        Log(log, std::string("[Pen] Session reset (") + reason + ") - ready for a new connection.");
+    };
 
     uint16_t frameId = 0;
     uint32_t frameCounter = 0;
@@ -138,6 +163,39 @@ void HostController::Run(HostSettings settings, LogCallback log) {
     auto lastProcessedTime = std::chrono::steady_clock::now() - frameInterval;
 
     while (running_) {
+        // Apply a pending manual retarget (from HostController::UpdateTabletIp,
+        // called after "Detect tethering" finds the tablet at a new address
+        // while already streaming). Cheap enough to check every iteration.
+        {
+            std::string newIp;
+            bool hasIp = false;
+            bool resetPen = false;
+            {
+                std::lock_guard<std::mutex> lock(pendingMutex_);
+                if (hasPendingTabletIp_) { newIp = pendingTabletIp_; hasIp = true; hasPendingTabletIp_ = false; }
+                resetPen = pendingPenReset_;
+                pendingPenReset_ = false;
+            }
+            if (hasIp) {
+                if (videoSender.SetDestination(newIp)) {
+                    Log(log, "[PC] Video destination updated to " + newIp + ":" + std::to_string(settings.videoPort));
+                } else {
+                    Log(log, "[ERROR] Failed to update video destination to " + newIp);
+                }
+            }
+            if (resetPen) resetPenSession("retargeted via Detect tethering");
+        }
+
+        // A locked pen source that has gone silent for kPenSilenceTimeoutMs
+        // is what a mid-session reconnect from a new address looks like from
+        // here - self-heal without waiting for the user to notice and press
+        // Detect. (IsSourceLocked() is false right after resetPenSession()
+        // above runs, so this doesn't immediately re-fire on the same event.)
+        if (inputReceiver.IsSourceLocked() &&
+            inputReceiver.MillisecondsSinceLastPacket() >= kPenSilenceTimeoutMs) {
+            resetPenSession("no pen input for 3s");
+        }
+
         const auto captureStart = std::chrono::steady_clock::now();
         const bool gotFrame = capture.CaptureFrame();
         const auto captureEnd = std::chrono::steady_clock::now();
@@ -206,12 +264,31 @@ void HostController::Run(HostSettings settings, LogCallback log) {
             // min..max here means the tablet -> host path is fine and any
             // remaining problem is in the receiving application.
             uint32_t penCount = 0, penMin = 0, penMax = 0, penLast = 0;
-            if (virtualPen.ConsumePressureStats(penCount, penMin, penMax, penLast)) {
+            const bool havePenData = virtualPen.ConsumePressureStats(penCount, penMin, penMax, penLast);
+            if (havePenData) {
                 stats << " | pen samples=" << penCount
                       << " pressure " << penMin << ".." << penMax
                       << " (last " << penLast << "/1024)";
             }
             Log(log, stats.str());
+
+            // Same numbers, structured, for the GUI's stat tiles.
+            stats_.fps.store(frameCounter, std::memory_order_relaxed);
+            if (timedFrameCount > 0) {
+                stats_.captureMs.store(static_cast<float>(captureMsTotal / timedFrameCount), std::memory_order_relaxed);
+                stats_.encodeMs.store(static_cast<float>(encodeMsTotal / timedFrameCount), std::memory_order_relaxed);
+                stats_.sendMs.store(static_cast<float>(sendMsTotal / timedFrameCount), std::memory_order_relaxed);
+                stats_.frameKB.store(static_cast<uint32_t>(bitstreamBytesTotal / timedFrameCount / 1024.0), std::memory_order_relaxed);
+            }
+            stats_.idleCount.store(idleCount, std::memory_order_relaxed);
+            stats_.cappedCount.store(skipCount, std::memory_order_relaxed);
+            stats_.hasPenData.store(havePenData, std::memory_order_relaxed);
+            if (havePenData) {
+                stats_.penSamples.store(penCount, std::memory_order_relaxed);
+                stats_.penMin.store(penMin, std::memory_order_relaxed);
+                stats_.penMax.store(penMax, std::memory_order_relaxed);
+                stats_.penLast.store(penLast, std::memory_order_relaxed);
+            }
             frameCounter = 0;
             captureMsTotal = encodeMsTotal = sendMsTotal = 0;
             submitMsTotal = readbackMsTotal = bitstreamBytesTotal = 0;

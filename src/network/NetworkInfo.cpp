@@ -13,6 +13,7 @@
 #include <windows.h>
 #include <iphlpapi.h>
 #include <ipifcons.h>  // IF_TYPE_SOFTWARE_LOOPBACK
+#include <netioapi.h>  // GetIpInterfaceEntry / SetIpInterfaceEntry
 
 #include <algorithm>
 #include <cstdint>
@@ -78,6 +79,8 @@ std::vector<AdapterInfo> EnumerateIPv4Adapters() {
         AdapterInfo info;
         info.name = ToUtf8(adapter->FriendlyName);
         info.description = ToUtf8(adapter->Description);
+        info.ifIndex = adapter->IfIndex;
+        info.currentMetric = adapter->Ipv4Metric;
 
         for (auto* unicast = adapter->FirstUnicastAddress; unicast != nullptr; unicast = unicast->Next) {
             const std::string ip = FormatIPv4(unicast->Address);
@@ -100,6 +103,14 @@ std::vector<AdapterInfo> EnumerateIPv4Adapters() {
             ContainsNoCase(info.name, "rndis") ||
             ContainsNoCase(info.name, "usb");
 
+        MIB_IPINTERFACE_ROW row{};
+        row.Family = AF_INET;
+        row.InterfaceIndex = info.ifIndex;
+        if (GetIpInterfaceEntry(&row) == NO_ERROR) {
+            info.usesAutomaticMetric = (row.UseAutomaticMetric != FALSE);
+            info.currentMetric = row.Metric;
+        }
+
         adapters.push_back(info);
     }
 
@@ -111,4 +122,23 @@ std::vector<AdapterInfo> EnumerateIPv4Adapters() {
         });
 
     return adapters;
+}
+
+bool DeprioritizeAdapterRoute(unsigned long ifIndex) {
+    MIB_IPINTERFACE_ROW row{};
+    row.Family = AF_INET;
+    row.InterfaceIndex = ifIndex;
+    if (GetIpInterfaceEntry(&row) != NO_ERROR) return false;
+    row.UseAutomaticMetric = FALSE;
+    row.Metric = 9999;
+    return SetIpInterfaceEntry(&row) == NO_ERROR;
+}
+
+bool RestoreAdapterAutoMetric(unsigned long ifIndex) {
+    MIB_IPINTERFACE_ROW row{};
+    row.Family = AF_INET;
+    row.InterfaceIndex = ifIndex;
+    if (GetIpInterfaceEntry(&row) != NO_ERROR) return false;
+    row.UseAutomaticMetric = TRUE;
+    return SetIpInterfaceEntry(&row) == NO_ERROR;
 }

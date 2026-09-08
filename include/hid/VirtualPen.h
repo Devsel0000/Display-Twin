@@ -19,6 +19,12 @@ public:
     bool Initialize();                    // Calls CreateSyntheticPointerDevice
     void InjectInput(const PenInputPacket& packet); // Calls InjectSyntheticPointerInput
 
+    // Lifts the tip if it is currently down, otherwise a no-op. Call this
+    // when the input session is considered gone (timeout, reconnect) so a
+    // stroke that was mid-drag when the link dropped doesn't leave Windows
+    // thinking the pen is still pressed forever.
+    void ReleaseIfDown();
+
     // Diagnostics: reports the pressure values (0-1024) actually handed to
     // Windows since the last call, then resets the window. Returns false if
     // no in-contact samples arrived. Lets the host log prove whether varying
@@ -30,7 +36,12 @@ private:
     HSYNTHETICPOINTERDEVICE hDevice = nullptr;
     int screenWidth_ = 0;
     int screenHeight_ = 0;
-    bool tipDown_ = false;
+    // InjectInput() runs on the UDP receive thread; ReleaseIfDown() is also
+    // called from the host's main loop thread on a session timeout/reset -
+    // atomic so that doesn't race with a concurrent InjectInput() call.
+    std::atomic<bool> tipDown_{false};
+    std::atomic<long> lastPixelX_{0};
+    std::atomic<long> lastPixelY_{0};
 
     // Written on the UDP receive thread, read on the host loop thread.
     std::atomic<uint32_t> pressureSamples_{0};

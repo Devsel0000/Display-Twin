@@ -16,7 +16,7 @@ bool SameEndpoint(const sockaddr_in& a, const sockaddr_in& b) {
 }
 
 // ----- UdpSender -----
-UdpSender::UdpSender(const std::string& ip, int port) {
+UdpSender::UdpSender(const std::string& ip, int port) : port_(port) {
 	winsockStarted_ = StartWinsock();
 	if (!winsockStarted_) return;
 	sock_ = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -42,13 +42,28 @@ UdpSender::~UdpSender() {
 
 bool UdpSender::IsValid() const { return sock_ != INVALID_SOCKET; }
 
+bool UdpSender::SetDestination(const std::string& ip) {
+	sockaddr_in newAddr{};
+	newAddr.sin_family = AF_INET;
+	newAddr.sin_port = htons(static_cast<u_short>(port_));
+	if (inet_pton(AF_INET, ip.c_str(), &newAddr.sin_addr) != 1) return false;
+	std::lock_guard<std::mutex> lock(addrMutex_);
+	addr_ = newAddr;
+	return true;
+}
+
 bool UdpSender::Send(const std::vector<uint8_t>& data) {
 	return Send(data.data(), data.size());
 }
 
 bool UdpSender::Send(const uint8_t* data, size_t len) {
 	if (sock_ == INVALID_SOCKET || !data || len == 0 || len > static_cast<size_t>(std::numeric_limits<int>::max())) return false;
-	int ret = sendto(sock_, (const char*)data, (int)len, 0, (sockaddr*)&addr_, sizeof(addr_));
+	sockaddr_in addrCopy;
+	{
+		std::lock_guard<std::mutex> lock(addrMutex_);
+		addrCopy = addr_;
+	}
+	int ret = sendto(sock_, (const char*)data, (int)len, 0, (sockaddr*)&addrCopy, sizeof(addrCopy));
 	return ret != SOCKET_ERROR;
 }
 
@@ -86,6 +101,12 @@ void UdpReceiver::EnableSourceLock(bool enable) {
 void UdpReceiver::ResetSourceLock() {
 	sourceLocked_ = false;
 	std::memset(&lockedSource_, 0, sizeof(lockedSource_));
+}
+
+DWORD UdpReceiver::MillisecondsSinceLastPacket() const {
+	const ULONGLONG last = lastPacketTick_.load();
+	if (last == 0) return MAXDWORD;
+	return static_cast<DWORD>(GetTickCount64() - last);
 }
 
 bool UdpReceiver::Start() {
@@ -135,6 +156,7 @@ void UdpReceiver::RunLoop() {
 					continue; // Drop packets from an unrecognized source.
 				}
 			}
+			lastPacketTick_.store(GetTickCount64());
 			callback_(buffer, len);
 		}
 		else if (len == SOCKET_ERROR) {
