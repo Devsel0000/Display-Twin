@@ -41,7 +41,7 @@
   <PropertyGroup>
     <OutDir>$(SolutionDir)$(Configuration)\</OutDir>
     <IntDir>$(Configuration)\$(ProjectName)\</IntDir>
-    <TargetName>PenDisplayPC</TargetName>
+    <TargetName>DisplayTwin</TargetName>
     <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
     <ApplicationManifest>PenDisplayPC.manifest</ApplicationManifest>
     <SubSystem>Windows</SubSystem>
@@ -50,40 +50,34 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)include;$(SolutionDir)third_party\imgui;$(SolutionDir)third_party\imgui\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;_WINSOCKAPI_;_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;_UNICODE;UNICODE;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>dxgi.lib;d3d11.lib;mf.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;ws2_32.lib;iphlpapi.lib;setupapi.lib;propsys.lib;evr.lib;comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dxgi.lib;d3d11.lib;mf.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;ws2_32.lib;iphlpapi.lib;setupapi.lib;propsys.lib;evr.lib;dwmapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <UACExecutionLevel>requireAdministrator</UACExecutionLevel>
       <UACUIAccess>false</UACUIAccess>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <!-- UACExecutionLevel makes the linker generate its own manifest,
-           which silently drops PenDisplayPC.manifest's <dependency> block.
-           This property injects the comctl32 v6 SxS dependency directly
-           into that linker-generated manifest so InitCommonControlsEx()
-           doesn't fail at runtime. -->
-      <AdditionalManifestDependencies>type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'</AdditionalManifestDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)include;$(SolutionDir)third_party\imgui;$(SolutionDir)third_party\imgui\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;_WINSOCKAPI_;_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;NDEBUG;_UNICODE;UNICODE;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>dxgi.lib;d3d11.lib;mf.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;ws2_32.lib;iphlpapi.lib;setupapi.lib;comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dxgi.lib;d3d11.lib;mf.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;ws2_32.lib;iphlpapi.lib;setupapi.lib;dwmapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <UACExecutionLevel>requireAdministrator</UACExecutionLevel>
       <UACUIAccess>false</UACUIAccess>
-      <AdditionalManifestDependencies>type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'</AdditionalManifestDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <None Include="PenDisplayPC.manifest" />
+    <ClInclude Include="include\app\Resource.h" />
     <ClInclude Include="include\capture\ScreenCapture.h" />
     <ClInclude Include="include\encoder\NvencEncoder.h" />
     <ClInclude Include="include\network\UdpTransport.h" />
@@ -92,6 +86,10 @@
     <ClInclude Include="include\app\HostConfig.h" />
     <ClInclude Include="include\protocol\Packets.h" />
     <ClInclude Include="include\app\HostController.h" />
+    <ClInclude Include="third_party\imgui\imgui.h" />
+    <ClInclude Include="third_party\imgui\imgui_internal.h" />
+    <ClInclude Include="third_party\imgui\backends\imgui_impl_win32.h" />
+    <ClInclude Include="third_party\imgui\backends\imgui_impl_dx11.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\capture\ScreenCapture.cpp" />
@@ -101,6 +99,15 @@
     <ClCompile Include="src\hid\VirtualPen.cpp" />
     <ClCompile Include="src\app\HostController.cpp" />
     <ClCompile Include="src\gui\GuiMain.cpp" />
+    <ClCompile Include="third_party\imgui\imgui.cpp" />
+    <ClCompile Include="third_party\imgui\imgui_draw.cpp" />
+    <ClCompile Include="third_party\imgui\imgui_tables.cpp" />
+    <ClCompile Include="third_party\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="third_party\imgui\backends\imgui_impl_win32.cpp" />
+    <ClCompile Include="third_party\imgui\backends\imgui_impl_dx11.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="PenDisplayPC.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
