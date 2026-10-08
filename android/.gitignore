@@ -1,0 +1,27 @@
+*.iml
+
+# Gradle
+.gradle/
+.gradle-local/
+/captures
+
+# Build output. No leading slash: this must also catch app/build/.
+build/
+.externalNativeBuild
+.cxx
+
+# Kotlin
+.kotlin/
+
+# Machine-specific SDK paths
+local.properties
+
+# IDE
+.idea/
+
+# Logs and crash dumps
+*.log
+hs_err_pid*.log
+replay_pid*.log
+
+.DS_Store
