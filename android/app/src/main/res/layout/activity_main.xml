@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- File: app/src/main/res/layout/activity_main.xml -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000"
+    android:keepScreenOn="true">
+
+    <com.example.androidpendisplay.PenSurfaceView
+        android:id="@+id/penSurfaceView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center" />
+
+    <!-- Draws the pen stroke locally the instant it happens, ahead of the
+         video round trip. Purely visual - does not intercept touch, see
+         InkOverlayView. -->
+    <com.example.androidpendisplay.InkOverlayView
+        android:id="@+id/inkOverlayView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center" />
+
+</FrameLayout>

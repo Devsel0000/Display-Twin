@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.AndroidPenDisplay" parent="Theme.AppCompat.NoActionBar">
+        <!-- 전체 화면 설정 -->
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:background">#000000</item>
+        <item name="android:windowBackground">#000000</item>
+        <item name="android:colorBackground">#000000</item>
+        
+        <!-- 상태바 및 네비게이션바 숨김 -->
+        <item name="android:windowTranslucentStatus">true</item>
+        <item name="android:windowTranslucentNavigation">true</item>
+        
+        <!-- 화면 꺼짐 방지 -->
+        <item name="android:keepScreenOn">true</item>
+    </style>
+</resources>

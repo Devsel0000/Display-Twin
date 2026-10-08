@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- USB 테더링 네트워크에 대한 보안 설정 -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">192.168.42.1</domain>
+        <domain includeSubdomains="true">192.168.42.129</domain>
+        <domain includeSubdomains="true">192.168.43.1</domain>
+        <domain includeSubdomains="true">192.168.43.129</domain>
+        <domain includeSubdomains="true">192.168.137.1</domain>
+        <domain includeSubdomains="true">192.168.137.129</domain>
+    </domain-config>
+
+    <!-- 기본적으로 모든 로컬 네트워크 허용 -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>

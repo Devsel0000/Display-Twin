@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{9A8F7B21-3C4D-4D4E-A1F8-1234567890AB}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>PenDisplayPC</RootNamespace>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)$(Configuration)\</OutDir>
+    <IntDir>$(Configuration)\$(ProjectName)\</IntDir>
+    <TargetName>DisplayTwin</TargetName>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <ApplicationManifest>PenDisplayPC.manifest</ApplicationManifest>
+    <SubSystem>Windows</SubSystem>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>$(SolutionDir)include;$(SolutionDir)third_party\imgui;$(SolutionDir)third_party\imgui\backends;$(SolutionDir)third_party\qrcodegen;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;_WINSOCKAPI_;_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;_UNICODE;UNICODE;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>dxgi.lib;d3d11.lib;mf.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;ws2_32.lib;iphlpapi.lib;setupapi.lib;propsys.lib;evr.lib;dwmapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <UACExecutionLevel>requireAdministrator</UACExecutionLevel>
+      <UACUIAccess>false</UACUIAccess>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <AdditionalIncludeDirectories>$(SolutionDir)include;$(SolutionDir)third_party\imgui;$(SolutionDir)third_party\imgui\backends;$(SolutionDir)third_party\qrcodegen;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;_WINSOCKAPI_;_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;NDEBUG;_UNICODE;UNICODE;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>dxgi.lib;d3d11.lib;mf.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;ws2_32.lib;iphlpapi.lib;setupapi.lib;dwmapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <UACExecutionLevel>requireAdministrator</UACExecutionLevel>
+      <UACUIAccess>false</UACUIAccess>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <None Include="PenDisplayPC.manifest" />
+    <ClInclude Include="include\app\Resource.h" />
+    <ClInclude Include="include\capture\ScreenCapture.h" />
+    <ClInclude Include="include\encoder\NvencEncoder.h" />
+    <ClInclude Include="include\encoder\VideoEncoder.h" />
+    <ClInclude Include="include\encoder\MediaFoundationEncoder.h" />
+    <ClInclude Include="include\network\UdpTransport.h" />
+    <ClInclude Include="include\network\NetworkInfo.h" />
+    <ClInclude Include="include\hid\VirtualPen.h" />
+    <ClInclude Include="include\app\HostConfig.h" />
+    <ClInclude Include="include\protocol\Packets.h" />
+    <ClInclude Include="include\protocol\Control.h" />
+    <ClInclude Include="include\app\HostController.h" />
+    <ClInclude Include="third_party\imgui\imgui.h" />
+    <ClInclude Include="third_party\imgui\imgui_internal.h" />
+    <ClInclude Include="third_party\imgui\backends\imgui_impl_win32.h" />
+    <ClInclude Include="third_party\imgui\backends\imgui_impl_dx11.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\capture\ScreenCapture.cpp" />
+    <ClCompile Include="src\encoder\NvencEncoder.cpp" />
+    <ClCompile Include="src\encoder\MediaFoundationEncoder.cpp" />
+    <ClCompile Include="src\network\UdpTransport.cpp" />
+    <ClCompile Include="src\network\NetworkInfo.cpp" />
+    <ClCompile Include="src\hid\VirtualPen.cpp" />
+    <ClCompile Include="src\app\HostController.cpp" />
+    <ClCompile Include="src\gui\GuiMain.cpp" />
+    <ClCompile Include="third_party\qrcodegen\qrcodegen.cpp" />
+    <ClCompile Include="third_party\imgui\imgui.cpp" />
+    <ClCompile Include="third_party\imgui\imgui_draw.cpp" />
+    <ClCompile Include="third_party\imgui\imgui_tables.cpp" />
+    <ClCompile Include="third_party\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="third_party\imgui\backends\imgui_impl_win32.cpp" />
+    <ClCompile Include="third_party\imgui\backends\imgui_impl_dx11.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="PenDisplayPC.rc" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

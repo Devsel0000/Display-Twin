@@ -1,10 +1,20 @@
+# Visual Studio / MSBuild output
 .vs/
-bin/
-obj/
+**/Debug/
+**/Release/
+**/x64/
 *.user
-*.suo
-*.sdf
-*.opensdf
-Debug/
-Release/
-dist/
+*.ipch
+CppProperties.json
+host/dist/
+host/logs/
+
+# Android / Gradle
+.gradle/
+.gradle-local/
+build/
+local.properties
+.idea/
+.kotlin/
+*.log
+hs_err_pid*.log
